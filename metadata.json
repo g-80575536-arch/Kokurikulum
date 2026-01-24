@@ -1,0 +1,5 @@
+{
+  "name": "Sistem Laporan Kokurikulum SK Krangan",
+  "description": "A professional web application for generating weekly co-curricular reports for Sekolah Kebangsaan Krangan 2026, featuring PDF generation and draft saving.",
+  "requestFramePermissions": []
+}
