@@ -11,5 +11,4 @@ export interface ReportData {
   namaPenyedia: string;
   jawatanPenyedia: string;
   images: string[];
-  phonePK: string;
 }

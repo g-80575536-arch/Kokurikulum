@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ReportData } from './types';
 import ReportForm from './components/ReportForm';
 import PDFTemplate from './components/PDFTemplate';
+import { GoogleGenAI } from "@google/genai";
 
 const STORAGE_KEY = 'kokurikulum_report_draft';
-const DEFAULT_PHONE = '+60 13-257 6050';
+const GPK_KOKU_PHONE = '60132576050';
 const DRIVE_FOLDER_LINK = 'https://drive.google.com/drive/folders/1IQcstBUm_iv75qTZQpX3r99smSBU9kMj?usp=drive_link';
 
 const App: React.FC = () => {
@@ -21,10 +22,10 @@ const App: React.FC = () => {
     namaPenyedia: '',
     jawatanPenyedia: '',
     images: [],
-    phonePK: DEFAULT_PHONE
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isAILoading, setIsAILoading] = useState(false);
   const pdfRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,8 +35,7 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         setData(prev => ({ 
           ...prev, 
-          ...parsed,
-          phonePK: parsed.phonePK || DEFAULT_PHONE 
+          ...parsed
         }));
       } catch (e) {
         console.error("Failed to load draft", e);
@@ -48,57 +48,100 @@ const App: React.FC = () => {
     alert('Draf laporan telah berjaya disimpan!');
   };
 
-  const getPDFWorker = () => {
-    if (!pdfRef.current) return null;
-    const element = pdfRef.current;
-    const opt = {
-      margin: 10,
-      filename: `Laporan_Koku_${data.program || 'Mingguan'}_${data.tarikh}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-    // @ts-ignore
-    return window.html2pdf().from(element).set(opt);
-  };
-
-  const handleGeneratePDF = () => {
-    const worker = getPDFWorker();
-    if (!worker) return;
-    
-    setIsGenerating(true);
-    worker.save().then(() => {
-      setIsGenerating(false);
-    }).catch((err: any) => {
-      console.error(err);
-      setIsGenerating(false);
-      alert('Gagal menjana PDF.');
-    });
-  };
-
-  const handleWhatsAppPK = () => {
-    if (!data.phonePK) {
-      alert('Sila isi nombor telefon Penolong Kanan Kokurikulum.');
+  const generateAIReport = async () => {
+    if (!data.program) {
+      alert("Sila isi nama 'Program / Aktiviti' terlebih dahulu supaya AI mempunyai konteks.");
       return;
     }
 
-    let phone = data.phonePK.replace(/\D/g, '');
-    if (phone.startsWith('0')) {
-      phone = '6' + phone;
-    } else if (phone.startsWith('1')) {
-      phone = '60' + phone;
-    }
+    setIsAILoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `
+        Tuliskan satu laporan aktiviti kokurikulum sekolah yang profesional dan padat dalam Bahasa Melayu.
+        Butiran Program:
+        - Nama Program: ${data.program}
+        - Anjuran: ${data.anjuran}
+        - Tarikh: ${data.tarikh}
+        - Masa: ${data.masa}
+        - Kehadiran: ${data.hadir} orang
+        
+        Sila hasilkan 2-3 perenggan yang merangkumi:
+        1. Tujuan/Objektif aktiviti.
+        2. Ringkasan perjalanan aktiviti dari mula hingga tamat.
+        3. Rumusan/Impak aktiviti kepada murid.
+        
+        Gunakan nada rasmi kerajaan/sekolah (Formal). Jangan gunakan emoji.
+      `;
 
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-lite-latest',
+        contents: [{ parts: [{ text: prompt }] }],
+      });
+
+      const generatedText = response.text || '';
+      setData(prev => ({ ...prev, laporan: generatedText.trim() }));
+    } catch (error) {
+      console.error("AI Generation Error:", error);
+      alert("Gagal menjana laporan dengan AI. Sila semak sambungan internet anda.");
+    } finally {
+      setIsAILoading(false);
+    }
+  };
+
+  const generatePDF = async () => {
+    if (!pdfRef.current) return;
+    
+    setIsGenerating(true);
+    const element = pdfRef.current;
+    
+    const images = element.getElementsByTagName('img');
+    const imagePromises = Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+    });
+
+    await Promise.all(imagePromises);
+
+    const opt = {
+      margin: 0,
+      filename: `Laporan_Koku_${data.program.replace(/\s+/g, '_') || 'Mingguan'}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true, 
+        letterRendering: true,
+        logging: false,
+        scrollY: -window.scrollY 
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    try {
+      // @ts-ignore
+      await window.html2pdf().from(element).set(opt).save();
+    } catch (err) {
+      console.error("PDF Generation Error:", err);
+      alert("Terdapat ralat semasa menjana PDF. Sila cuba lagi.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleWhatsAppPK = () => {
     const message = encodeURIComponent(
       `*LAPORAN MINGGUAN KOKURIKULUM SK KRANGAN 2026*\n\n` +
       `*Program:* ${data.program || '-'}\n` +
       `*Tarikh:* ${data.tarikh || '-'}\n` +
       `*Kehadiran:* ${data.hadir || '0'} Orang\n\n` +
       `*Disediakan oleh:* ${data.namaPenyedia || '-'}\n\n` +
-      `_Sila lampirkan fail PDF yang telah dijana. Laporan juga akan dimuat naik ke folder Google Drive Kokurikulum._`
+      `_Sila lampirkan fail PDF yang telah dimuat turun. Laporan juga akan dimuat naik ke folder Google Drive Kokurikulum._`
     );
 
-    window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+    window.open(`https://wa.me/${GPK_KOKU_PHONE}?text=${message}`, '_blank');
   };
 
   const handleOpenDrive = () => {
@@ -106,42 +149,57 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen pb-12">
-      <header className="bg-[#003366] text-white py-8 shadow-md no-print">
+    <div className="flex flex-col min-h-screen">
+      <header className="bg-white border-b border-slate-200 py-6 shadow-sm no-print">
         <div className="container mx-auto px-4 flex flex-col items-center text-center">
           <img 
             src="https://i.postimg.cc/xCQ9fWNF/IMG-9606-(1)-(1).jpg" 
             alt="Logo Sekolah" 
-            className="h-24 w-auto mb-4 drop-shadow-lg"
+            className="h-20 w-auto mb-4"
           />
-          <h1 className="text-2xl md:text-3xl font-bold uppercase tracking-wide">
+          <h1 className="text-xl md:text-2xl font-bold uppercase tracking-tight text-[#004488]">
             Laporan Mingguan Perjumpaan Kokurikulum
           </h1>
-          <h2 className="text-xl md:text-2xl font-semibold opacity-90">
+          <h2 className="text-lg md:text-xl font-medium text-slate-600">
             Sekolah Kebangsaan Krangan 2026
           </h2>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 mt-8 max-w-5xl no-print">
-        <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
-          <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex justify-between items-center">
-            <h3 className="text-lg font-bold text-slate-700 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      <main className="flex-grow container mx-auto px-4 py-8 max-w-5xl no-print">
+        <div className="bg-white rounded-xl shadow-2xl overflow-hidden border border-blue-100 relative">
+          {/* AI Generation Overlay */}
+          {isAILoading && (
+            <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#004488] mb-4"></div>
+              <p className="text-[#004488] font-bold animate-pulse text-lg">AI sedang menjana laporan anda...</p>
+            </div>
+          )}
+
+          <div className="bg-blue-50 border-b border-blue-100 px-6 py-4 flex justify-between items-center">
+            <h3 className="text-lg font-bold text-[#004488] flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               Borang Maklumat Laporan
             </h3>
-            <span className="text-xs font-semibold text-slate-400 uppercase bg-slate-100 px-2 py-1 rounded">Kemaskini Drive 2026</span>
+            <div className="flex items-center gap-2">
+               <span className="flex items-center text-[10px] font-bold text-white bg-[#004488] px-3 py-1 rounded-full shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                  </svg>
+                  POWERED BY GEMINI AI
+               </span>
+            </div>
           </div>
           
-          <div className="p-6">
-            <ReportForm data={data} setData={setData} />
+          <div className="p-8">
+            <ReportForm data={data} setData={setData} onAIAssist={generateAIReport} isAILoading={isAILoading} />
             
-            <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-slate-100 pt-8">
+            <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-slate-100 pt-8">
               <button
                 onClick={handleSaveDraft}
-                className="w-full px-4 py-4 bg-slate-600 hover:bg-slate-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center shadow-md active:transform active:scale-95"
+                className="w-full px-4 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center border border-slate-200 active:transform active:scale-95"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -150,9 +208,9 @@ const App: React.FC = () => {
               </button>
               
               <button
-                onClick={handleGeneratePDF}
+                onClick={generatePDF}
                 disabled={isGenerating}
-                className={`w-full px-4 py-4 bg-[#003366] hover:bg-[#002244] text-white font-bold rounded-xl transition-all flex items-center justify-center shadow-lg active:transform active:scale-95 ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`w-full px-4 py-4 bg-[#004488] hover:bg-[#003366] text-white font-bold rounded-xl transition-all flex items-center justify-center shadow-lg active:transform active:scale-95 ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {isGenerating ? 'MENJANA...' : 'MUAT TURUN PDF'}
               </button>
@@ -169,23 +227,24 @@ const App: React.FC = () => {
 
               <button
                 onClick={handleOpenDrive}
-                className="w-full px-4 py-4 bg-white border-2 border-slate-200 hover:border-blue-400 text-slate-700 font-bold rounded-xl transition-all flex items-center justify-center shadow-lg active:transform active:scale-95 group"
+                className="w-full px-4 py-4 bg-white border-2 border-[#004488] hover:bg-blue-50 text-[#004488] font-bold rounded-xl transition-all flex items-center justify-center shadow-lg active:transform active:scale-95 group"
               >
                 <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" className="w-6 h-6 mr-2" alt="Drive" />
                 SIMPAN KE DRIVE
               </button>
             </div>
-            
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-start">
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+            <div className="mt-8 p-5 bg-blue-50 border border-blue-100 rounded-xl flex items-start">
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#004488] mt-0.5 mr-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                </svg>
-               <div className="text-sm text-blue-800">
-                  <p className="font-bold">Langkah Seterusnya:</p>
-                  <ol className="list-decimal ml-4 mt-1 space-y-1">
-                    <li>Klik <strong>MUAT TURUN PDF</strong> untuk simpan laporan dalam peranti anda.</li>
-                    <li>Klik <strong>SIMPAN KE DRIVE</strong> untuk membuka folder Google Drive Kokurikulum dan tarik fail PDF tersebut ke dalamnya.</li>
-                    <li>Klik <strong>WA PK KOKU</strong> untuk menghantar notifikasi rasmi melalui WhatsApp.</li>
+               <div className="text-sm text-[#004488]">
+                  <p className="font-bold text-base mb-2">Panduan Penggunaan:</p>
+                  <ol className="list-decimal ml-5 space-y-1 font-medium">
+                    <li>Isi maklumat aktiviti. Klik butang <span className="text-indigo-600 font-bold">✨ BANTU SAYA TULIS</span> untuk draf laporan pantas.</li>
+                    <li>Muat naik gambar (maksimum 6 keping).</li>
+                    <li>Klik <strong>MUAT TURUN PDF</strong> dan <strong>SIMPAN KE DRIVE</strong>.</li>
+                    <li>Hantar makluman rasmi melalui butang <strong>WA PK KOKU</strong> kepada Penolong Kanan Kokurikulum (No: 013-257 6050).</li>
                   </ol>
                </div>
             </div>
@@ -193,15 +252,24 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      <footer className="bg-white border-t border-slate-200 py-10 no-print">
+        <div className="container mx-auto px-4 text-center">
+          <p className="text-slate-600 font-medium">&copy; 2026 SK Krangan - Sistem Pelaporan Kokurikulum Rasmi</p>
+          <div className="flex justify-center gap-4 mt-4 text-xs text-slate-400 uppercase tracking-widest">
+            <span>Inovasi Pendidikan</span>
+            <span>•</span>
+            <span>Kecemerlangan Kokurikulum</span>
+            <span>•</span>
+            <span>Penyampaian Digital</span>
+          </div>
+        </div>
+      </footer>
+
       <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
         <div ref={pdfRef}>
           <PDFTemplate data={data} />
         </div>
       </div>
-
-      <footer className="mt-12 text-center text-slate-400 text-sm no-print">
-        <p>&copy; 2026 SK Krangan - Sistem Pelaporan Rasmi</p>
-      </footer>
     </div>
   );
 };
