@@ -1,15 +1,25 @@
 
 import React from 'react';
 import { ReportData } from '../types';
+import { ReportLength } from '../App';
 
 interface Props {
   data: ReportData;
   setData: React.Dispatch<React.SetStateAction<ReportData>>;
   onAIAssist?: () => void;
   isAILoading?: boolean;
+  reportLength: ReportLength;
+  setReportLength: (len: ReportLength) => void;
 }
 
-const ReportForm: React.FC<Props> = ({ data, setData, onAIAssist, isAILoading }) => {
+const ReportForm: React.FC<Props> = ({ 
+  data, 
+  setData, 
+  onAIAssist, 
+  isAILoading,
+  reportLength,
+  setReportLength
+}) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setData(prev => ({ ...prev, [name]: value }));
@@ -19,7 +29,7 @@ const ReportForm: React.FC<Props> = ({ data, setData, onAIAssist, isAILoading })
     const files = e.target.files;
     if (!files) return;
 
-    const filesArray = Array.from(files).slice(0, 6);
+    const filesArray = (Array.from(files) as File[]).slice(0, 6);
     const readers = filesArray.map(file => {
       return new Promise<string>((resolve) => {
         const reader = new FileReader();
@@ -33,32 +43,31 @@ const ReportForm: React.FC<Props> = ({ data, setData, onAIAssist, isAILoading })
     });
   };
 
-  // Standard input class with light gray background
   const inputClass = "w-full px-4 py-2 rounded-lg border border-slate-300 bg-gray-100 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all";
+  const readOnlyClass = "w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-200 text-slate-600 cursor-not-allowed outline-none";
   const labelClass = "block text-sm font-semibold text-slate-700 mb-1";
-
-  const timeSuggestions = [
-    "1:00 PM - 2:00 PM",
-    "1:30 PM - 3:30 PM",
-    "2:00 PM - 4:00 PM",
-    "2:30 PM - 4:30 PM",
-    "3:00 PM - 5:00 PM",
-    "8:00 AM - 10:00 AM",
-    "8:30 AM - 10:30 AM",
-    "9:00 AM - 11:00 AM",
-    "9:00 AM - 12:00 PM"
-  ];
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="md:col-span-2">
+          <label className={labelClass}>Nama Kelab / Persatuan / Badan Beruniform:</label>
+          <input 
+            type="text" 
+            name="unitName" 
+            value={data.unitName} 
+            onChange={handleChange} 
+            placeholder="Contoh: Persatuan Sains & Matematik / Pengakap / Bola Sepak" 
+            className={inputClass} 
+          />
+        </div>
         <div>
           <label className={labelClass}>Program / Aktiviti:</label>
-          <input type="text" name="program" value={data.program} onChange={handleChange} placeholder="Contoh: Perjumpaan Pengakap Bil. 1" className={inputClass} />
+          <input type="text" name="program" value={data.program} onChange={handleChange} placeholder="Contoh: Perjumpaan Bil. 1 / Latihan Kawad" className={inputClass} />
         </div>
         <div>
           <label className={labelClass}>Anjuran:</label>
-          <input type="text" name="anjuran" value={data.anjuran} onChange={handleChange} placeholder="Contoh: Unit Beruniform" className={inputClass} />
+          <input type="text" name="anjuran" value={data.anjuran} onChange={handleChange} placeholder="Contoh: Unit Kokurikulum" className={inputClass} />
         </div>
         <div>
           <label className={labelClass}>Tarikh:</label>
@@ -71,20 +80,14 @@ const ReportForm: React.FC<Props> = ({ data, setData, onAIAssist, isAILoading })
           />
         </div>
         <div>
-          <label className={labelClass}>Masa (Taip atau Pilih Cadangan):</label>
+          <label className={labelClass}>Masa (Tetap):</label>
           <input 
-            list="time-options"
+            type="text"
             name="masa" 
             value={data.masa} 
-            onChange={handleChange} 
-            placeholder="Contoh: 2:00 PM - 4:00 PM"
-            className={inputClass}
+            readOnly
+            className={readOnlyClass}
           />
-          <datalist id="time-options">
-            {timeSuggestions.map((option, idx) => (
-              <option key={idx} value={option} />
-            ))}
-          </datalist>
         </div>
         <div>
           <label className={labelClass}>Bilangan Murid Hadir:</label>
@@ -96,34 +99,54 @@ const ReportForm: React.FC<Props> = ({ data, setData, onAIAssist, isAILoading })
         </div>
         <div className="md:col-span-2">
           <label className={labelClass}>Nama Guru Penasihat:</label>
-          <input type="text" name="guruPenasihat" value={data.guruPenasihat} onChange={handleChange} placeholder="Nama guru terlibat" className={inputClass} />
+          <input type="text" name="guruPenasihat" value={data.guruPenasihat} onChange={handleChange} placeholder="Nama guru penasihat yang bertugas" className={inputClass} />
         </div>
       </div>
 
       <div className="relative">
-        <div className="flex justify-between items-center mb-1">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-2 gap-2">
           <label className={labelClass}>Laporan Aktiviti:</label>
-          <button 
-            type="button"
-            onClick={onAIAssist}
-            disabled={isAILoading}
-            className="text-[11px] flex items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-1 rounded-full font-bold hover:shadow-lg transition-all active:scale-95 disabled:opacity-50"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-            </svg>
-            {isAILoading ? 'MENJANA...' : '✨ BANTU SAYA TULIS'}
-          </button>
+          
+          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <span className="text-[10px] font-bold text-slate-500 px-2 uppercase tracking-tighter">Saiz:</span>
+            <div className="flex gap-1">
+              {(['pendek', 'sederhana', 'panjang'] as ReportLength[]).map((len) => (
+                <button
+                  key={len}
+                  type="button"
+                  onClick={() => setReportLength(len)}
+                  className={`text-[10px] px-2 py-1 rounded md:px-3 font-bold uppercase transition-all ${
+                    reportLength === len 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {len}
+                </button>
+              ))}
+            </div>
+            <div className="w-px h-4 bg-slate-300 mx-2"></div>
+            <button 
+              type="button"
+              onClick={onAIAssist}
+              disabled={isAILoading}
+              className="text-[11px] flex items-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-1.5 rounded-md font-bold hover:shadow-lg transition-all active:scale-95 disabled:opacity-50"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+              </svg>
+              {isAILoading ? 'MENJANA...' : '✨ BANTU SAYA TULIS'}
+            </button>
+          </div>
         </div>
         <textarea 
           name="laporan" 
           value={data.laporan} 
           onChange={handleChange} 
-          rows={6} 
+          rows={10} 
           placeholder="Tuliskan ringkasan aktiviti di sini atau klik butang AI untuk bantuan..." 
           className={inputClass} 
         />
-        <p className="text-[10px] text-slate-400 mt-1 italic">* AI akan menjana draf laporan berdasarkan butiran program di atas.</p>
       </div>
 
       <div>
@@ -131,10 +154,10 @@ const ReportForm: React.FC<Props> = ({ data, setData, onAIAssist, isAILoading })
         <div className="mt-2 flex flex-col items-center p-6 border-2 border-dashed border-slate-300 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer relative shadow-inner">
           <input type="file" multiple accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           <p className="text-sm text-slate-500 font-medium text-center">Klik atau tarik gambar ke sini</p>
-          <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tighter">SUSUNAN: 3 KEPING ATAS, 3 KEPING BAWAH</p>
+          <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tighter">GAMBAR KOSONG TIDAK AKAN DIPAPARKAN DALAM PDF</p>
         </div>
         {data.images.length > 0 && (
           <div className="mt-4 grid grid-cols-3 sm:grid-cols-6 gap-3">

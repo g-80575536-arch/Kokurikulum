@@ -1,5 +1,6 @@
 
 export interface ReportData {
+  unitName: string;
   program: string;
   anjuran: string;
   tarikh: string;
